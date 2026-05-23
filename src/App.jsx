@@ -16,7 +16,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const ROBOT_ID = import.meta.env.VITE_ROBOT_ID || 'test-robot';
 
 const initialHistory = [
-  { id: 1, time: '09:18', command: '招手', result: '已入库' },
+  { id: 1, time: '09:18', command: '招手', result: '已招手' },
   { id: 2, time: '09:42', command: '出库巡游', result: '已出库' },
   { id: 3, time: '10:06', command: '回到猫窝', result: '已入库' },
 ];
@@ -38,6 +38,8 @@ function App() {
   const [statusText, setStatusText] = useState('点击麦克风开始说话');
   const [micError, setMicError] = useState('');
   const mediaRecorderRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const recognitionFinalRef = useRef('');
   const streamRef = useRef(null);
   const audioChunksRef = useRef([]);
   const abortRef = useRef(null);
@@ -54,6 +56,7 @@ function App() {
   useEffect(() => {
     return () => {
       stopTracks();
+      stopBrowserRecognition(true);
       abortRef.current?.abort();
       window.speechSynthesis?.cancel();
     };
@@ -117,6 +120,113 @@ function App() {
     setMicError('');
     setIsInterrupted(false);
 
+    if (canUseBrowserSpeechRecognition()) {
+      startBrowserRecognition();
+      return;
+    }
+
+    await startMediaRecording();
+  };
+
+  const startBrowserRecognition = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = 'zh-CN';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognitionFinalRef.current = '';
+
+    recognition.onstart = () => {
+      recognitionRef.current = recognition;
+      setIsRecording(true);
+      setStatusText('正在聆听，你可以开始说话');
+    };
+
+    recognition.onresult = (event) => {
+      let finalText = '';
+      let interimText = '';
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0].transcript;
+        if (event.results[index].isFinal) {
+          finalText += transcript;
+        } else {
+          interimText += transcript;
+        }
+      }
+
+      if (finalText) {
+        recognitionFinalRef.current = `${recognitionFinalRef.current}${finalText}`.trim();
+      }
+
+      const visibleText = `${recognitionFinalRef.current} ${interimText}`.trim();
+      if (visibleText) {
+        setStatusText(visibleText);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+
+      if (event.error === 'not-allowed') {
+        setMicError('需要允许麦克风权限');
+        setStatusText('麦克风权限被拒绝');
+        return;
+      }
+
+      if (event.error === 'no-speech') {
+        setMicError('没有听到声音，请靠近一点再试');
+        setStatusText('没有听到声音');
+        return;
+      }
+
+      setMicError('浏览器语音识别不可用，已尝试录音模式');
+      void startMediaRecording();
+    };
+
+    recognition.onend = () => {
+      const text = recognitionFinalRef.current.trim();
+      recognitionRef.current = null;
+      setIsRecording(false);
+
+      if (discardRecordingRef.current) {
+        discardRecordingRef.current = false;
+        recognitionFinalRef.current = '';
+        return;
+      }
+
+      if (text) {
+        void processUserInput(text, { source: 'browser-speech' });
+      } else {
+        setStatusText('没有识别到内容，再试一次');
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setMicError('浏览器语音识别启动失败，已尝试录音模式');
+      void startMediaRecording();
+    }
+  };
+
+  const stopBrowserRecognition = (discard = false) => {
+    if (!recognitionRef.current) return false;
+
+    discardRecordingRef.current = discard;
+    try {
+      recognitionRef.current.stop();
+    } catch {
+      recognitionRef.current = null;
+      setIsRecording(false);
+    }
+    return true;
+  };
+
+  const startMediaRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
@@ -152,7 +262,7 @@ function App() {
 
       recorder.start();
       setIsRecording(true);
-      setStatusText('正在聆听，再点一次发送');
+      setStatusText('正在录音，再点一次发送');
     } catch (error) {
       setIsRecording(false);
       setMicError('需要允许麦克风权限');
@@ -161,6 +271,11 @@ function App() {
   };
 
   const stopRecording = () => {
+    if (stopBrowserRecognition(false)) {
+      setStatusText('正在整理你说的话');
+      return;
+    }
+
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state === 'recording') {
       recorder.stop();
@@ -181,7 +296,7 @@ function App() {
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     setIsThinking(true);
-    setStatusText('正在连接机器猫');
+    setStatusText('正在识别语音');
 
     try {
       const formData = new FormData();
@@ -205,12 +320,38 @@ function App() {
         return;
       }
 
-      setStatusText(userInput);
+      await processUserInput(userInput, { source: 'server-speech' });
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setStatusText('语音识别没有返回文字');
+        setMicError(error.message);
+      }
+    } finally {
+      setIsThinking(false);
+    }
+  };
 
+  const processUserInput = async (userInput, meta = {}) => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    setIsThinking(true);
+    setMicError('');
+    setStatusText(userInput);
+
+    const localResult = inferActionResult(userInput);
+
+    if (localResult !== '已执行') {
+      addHistoryItem(userInput, localResult);
+      if (shouldPlayWarehouseIn(userInput, null, '', localResult)) {
+        playWarehouseInAnimation();
+      }
+    }
+
+    try {
       const chatResponse = await fetch(`${API_BASE}/interaction/${ROBOT_ID}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userInput }),
+        body: JSON.stringify({ userInput, source: meta.source }),
         signal: abortRef.current.signal,
       });
 
@@ -221,16 +362,24 @@ function App() {
       const chatData = await chatResponse.json();
       const reply = chatData.responseText || chatData.response || chatData.text || '收到';
       const actionResult = inferActionResult(userInput, chatData);
-      addHistoryItem(userInput, actionResult);
+
+      if (localResult === '已执行') {
+        addHistoryItem(userInput, actionResult);
+      }
+
       if (shouldPlayWarehouseIn(userInput, chatData, reply, actionResult)) {
         playWarehouseInAnimation();
       }
+
       setStatusText(reply);
       speak(reply);
     } catch (error) {
       if (error.name !== 'AbortError') {
-        setStatusText('本地后端暂时没有回应');
-        setMicError(error.message);
+        if (localResult === '已执行') {
+          addHistoryItem(userInput, '已记录');
+        }
+        setStatusText(`听到了：${userInput}`);
+        setMicError('已听到语音，本地后端暂时没有回应');
       }
     } finally {
       setIsThinking(false);
@@ -265,7 +414,9 @@ function App() {
     window.speechSynthesis?.cancel();
     if (isRecording) {
       discardRecordingRef.current = true;
-      stopRecording();
+      if (!stopBrowserRecognition(true)) {
+        stopRecording();
+      }
     }
     setIsThinking(false);
     setIsInterrupted(true);
@@ -394,7 +545,11 @@ function App() {
   );
 }
 
-function inferActionResult(userInput, chatData) {
+function canUseBrowserSpeechRecognition() {
+  return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+}
+
+function inferActionResult(userInput, chatData = null) {
   const text = `${userInput} ${JSON.stringify(chatData || {})}`;
   if (text.includes('出库')) return '已出库';
   if (text.includes('入库') || text.includes('回') || text.includes('猫窝')) return '已入库';
