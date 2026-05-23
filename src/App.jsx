@@ -1,6 +1,7 @@
 import {
   Bluetooth,
   CircleUserRound,
+  History,
   Lock,
   Mic,
   MicOff,
@@ -14,9 +15,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const ROBOT_ID = import.meta.env.VITE_ROBOT_ID || 'test-robot';
 
+const initialHistory = [
+  { id: 1, time: '09:18', command: '招手', result: '已入库' },
+  { id: 2, time: '09:42', command: '出库巡游', result: '已出库' },
+  { id: 3, time: '10:06', command: '回到猫窝', result: '已入库' },
+];
+
 function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState('register');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState(initialHistory);
   const [activeConnection, setActiveConnection] = useState(null);
   const [connections, setConnections] = useState({
     wifi: 'connected',
@@ -52,6 +61,25 @@ function App() {
   const stopTracks = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+  };
+
+  const addHistoryItem = (command, result = '已执行') => {
+    const now = new Date();
+    const time = now.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
+    setHistoryItems((current) => [
+      {
+        id: now.getTime(),
+        time,
+        command: command || '语音指令',
+        result,
+      },
+      ...current,
+    ].slice(0, 20));
   };
 
   const updateConnection = (key) => {
@@ -181,6 +209,7 @@ function App() {
 
       const chatData = await chatResponse.json();
       const reply = chatData.responseText || chatData.response || chatData.text || '收到';
+      addHistoryItem(userInput, inferActionResult(userInput, chatData));
       setStatusText(reply);
       speak(reply);
     } catch (error) {
@@ -242,15 +271,21 @@ function App() {
       <div className="bottom-fade" />
 
       <header className="topbar">
-        <button className="identity-button" type="button" onClick={() => setAuthOpen(true)} aria-label="账号和设置">
-          <span className="identity-avatar">
-            <CircleUserRound size={24} strokeWidth={1.9} />
-          </span>
-          <span className="identity-copy">
-            <strong>小白</strong>
-            <span>{ROBOT_ID}</span>
-          </span>
-        </button>
+        <div className="top-left-cluster">
+          <button className="identity-button" type="button" onClick={() => setAuthOpen(true)} aria-label="账号和设置">
+            <span className="identity-avatar">
+              <CircleUserRound size={24} strokeWidth={1.9} />
+            </span>
+            <span className="identity-copy">
+              <strong>小白</strong>
+              <span>{ROBOT_ID}</span>
+            </span>
+          </button>
+
+          <button className="history-button" type="button" onClick={() => setHistoryOpen(true)} aria-label="历史记录">
+            <History size={24} strokeWidth={2.2} />
+          </button>
+        </div>
 
         <div className="connection-cluster" aria-label="连接状态">
           {connectionItems.map(({ key, label, icon: Icon }) => (
@@ -305,6 +340,13 @@ function App() {
         />
       )}
 
+      {historyOpen && (
+        <HistorySheet
+          items={historyItems}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
       {activeConnection && (
         <ConnectionSheet
           connection={connectionItems.find((item) => item.key === activeConnection)}
@@ -315,6 +357,15 @@ function App() {
       )}
     </main>
   );
+}
+
+function inferActionResult(userInput, chatData) {
+  const text = `${userInput} ${JSON.stringify(chatData || {})}`;
+  if (text.includes('出库')) return '已出库';
+  if (text.includes('入库') || text.includes('回') || text.includes('猫窝')) return '已入库';
+  if (text.includes('招手')) return '已招手';
+  if (text.includes('停')) return '已停止';
+  return '已执行';
 }
 
 function connectionLabel(status) {
@@ -368,6 +419,40 @@ function ConnectionSheet({ connection, status, onToggle, onClose }) {
           <PlugZap size={18} />
           {connected ? `断开${connection.label}` : connecting ? '连接中' : `重新连接${connection.label}`}
         </button>
+      </section>
+    </div>
+  );
+}
+
+function HistorySheet({ items, onClose }) {
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <section className="history-sheet" role="dialog" aria-modal="true" aria-label="语音执行记录" onClick={(event) => event.stopPropagation()}>
+        <div className="sheet-handle" />
+        <header className="sheet-header">
+          <span className="sheet-large-icon">
+            <History size={28} />
+          </span>
+          <div>
+            <h2>历史记录</h2>
+            <p>语音输入让机器猫执行的动作。</p>
+          </div>
+          <button className="sheet-close" onClick={onClose} aria-label="关闭">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="history-list" aria-label="执行记录列表">
+          {items.map((item) => (
+            <article className="history-item" key={item.id}>
+              <time>{item.time}</time>
+              <div>
+                <strong>{item.command}</strong>
+                <span>{item.result}</span>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
     </div>
   );

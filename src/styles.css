@@ -94,6 +94,7 @@ button:focus-visible {
 }
 
 .identity-button,
+.history-button,
 .connection-button {
   border: 1px solid rgba(255, 255, 255, 0.7);
   color: var(--aqua);
@@ -106,6 +107,13 @@ button:focus-visible {
   backdrop-filter: blur(18px);
 }
 
+.top-left-cluster {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .identity-button {
   min-width: 0;
   max-width: min(48vw, 178px);
@@ -115,6 +123,16 @@ button:focus-visible {
   gap: 9px;
   padding: 8px 18px 8px 9px;
   border-radius: 999px;
+}
+
+.history-button {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: var(--aqua);
 }
 
 .identity-avatar {
@@ -387,6 +405,7 @@ button:focus-visible {
 .mic-button:active,
 .interrupt-button:active,
 .identity-button:active,
+.history-button:active,
 .connection-button:active {
   transform: scale(0.95);
 }
@@ -421,7 +440,8 @@ button:focus-visible {
 }
 
 .auth-sheet,
-.connection-sheet {
+.connection-sheet,
+.history-sheet {
   width: 100%;
   max-height: min(78dvh, 620px);
   overflow: auto;
@@ -441,7 +461,8 @@ button:focus-visible {
 }
 
 .auth-sheet::-webkit-scrollbar,
-.connection-sheet::-webkit-scrollbar {
+.connection-sheet::-webkit-scrollbar,
+.history-sheet::-webkit-scrollbar {
   display: none;
 }
 
@@ -600,6 +621,50 @@ button:focus-visible {
   opacity: 0.72;
 }
 
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(80, 67, 52, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.history-item time {
+  color: var(--aqua);
+  font-size: 15px;
+  font-weight: 820;
+}
+
+.history-item div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.history-item strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 680;
+}
+
 .auth-form {
   display: grid;
   gap: 12px;
@@ -684,6 +749,11 @@ button:focus-visible {
     width: 58px;
     height: 58px;
     padding: 5px;
+  }
+
+  .history-button {
+    width: 54px;
+    height: 54px;
   }
 
   .identity-copy {
