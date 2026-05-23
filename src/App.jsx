@@ -34,6 +34,7 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isInterrupted, setIsInterrupted] = useState(false);
+  const [activeVideo, setActiveVideo] = useState('idle');
   const [statusText, setStatusText] = useState('点击麦克风开始说话');
   const [micError, setMicError] = useState('');
   const mediaRecorderRef = useRef(null);
@@ -57,6 +58,16 @@ function App() {
       window.speechSynthesis?.cancel();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeVideo !== 'warehouseIn') return undefined;
+
+    const fallbackTimer = window.setTimeout(() => {
+      setActiveVideo('idle');
+    }, 12000);
+
+    return () => window.clearTimeout(fallbackTimer);
+  }, [activeVideo]);
 
   const stopTracks = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -209,7 +220,11 @@ function App() {
 
       const chatData = await chatResponse.json();
       const reply = chatData.responseText || chatData.response || chatData.text || '收到';
-      addHistoryItem(userInput, inferActionResult(userInput, chatData));
+      const actionResult = inferActionResult(userInput, chatData);
+      addHistoryItem(userInput, actionResult);
+      if (shouldPlayWarehouseIn(userInput, chatData, reply, actionResult)) {
+        playWarehouseInAnimation();
+      }
       setStatusText(reply);
       speak(reply);
     } catch (error) {
@@ -263,9 +278,29 @@ function App() {
     setStatusText('已关闭');
   };
 
+  const playWarehouseInAnimation = () => {
+    setActiveVideo('warehouseIn');
+  };
+
+  const handleWarehouseInEnded = () => {
+    setActiveVideo('idle');
+  };
+
   return (
     <main className="machinecat-app" aria-label="MachineCat voice interface">
-      <video className="sayhi-video" src="/sayhi.mp4" autoPlay playsInline muted loop />
+      {activeVideo === 'warehouseIn' ? (
+        <video
+          className="sayhi-video"
+          key="warehouse-in"
+          src="/warehouse-in.mp4"
+          autoPlay
+          playsInline
+          muted
+          onEnded={handleWarehouseInEnded}
+        />
+      ) : (
+        <video className="sayhi-video" key="sayhi" src="/sayhi.mp4" autoPlay playsInline muted loop />
+      )}
 
       <div className="top-fade" />
       <div className="bottom-fade" />
@@ -366,6 +401,11 @@ function inferActionResult(userInput, chatData) {
   if (text.includes('招手')) return '已招手';
   if (text.includes('停')) return '已停止';
   return '已执行';
+}
+
+function shouldPlayWarehouseIn(userInput, chatData, reply, actionResult) {
+  const text = `${userInput} ${reply} ${actionResult} ${JSON.stringify(chatData || {})}`;
+  return text.includes('入库');
 }
 
 function connectionLabel(status) {
