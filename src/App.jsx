@@ -41,14 +41,6 @@ function App() {
     [],
   );
 
-  const isBusy = isRecording || isThinking;
-  const modeLabel = useMemo(() => {
-    if (isRecording) return '正在聆听';
-    if (isThinking) return '正在回应';
-    if (isInterrupted) return '已打断';
-    return '待命';
-  }, [isInterrupted, isRecording, isThinking]);
-
   useEffect(() => {
     return () => {
       stopTracks();
@@ -275,11 +267,6 @@ function App() {
           ))}
         </div>
       </header>
-
-      <section className="voice-state" aria-live="polite">
-        <span className={`state-dot ${isBusy ? 'active' : ''}`} />
-        <span>{modeLabel}</span>
-      </section>
 
       <button className="interrupt-button" type="button" onClick={interruptReply}>
         点击打断
